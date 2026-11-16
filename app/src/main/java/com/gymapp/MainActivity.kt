@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +91,7 @@ object Routes {
     const val FOOD_ANALYTICS = "food/analytics"
     fun startRoutine(date: LocalDate) = "routines/${date.toEpochDay()}"
     const val NEW_ROUTINE = "routine/new"
+    const val NEW_EXERCISE_FOR_ROUTINE = "routine/exercise/new"
     fun editRoutine(id: Long) = "routine/edit/$id"
 }
 
@@ -170,20 +172,29 @@ private fun AppNavigation() {
                 onEditRoutine = { nav.navigate(Routes.editRoutine(it)) },
             )
         }
-        composable(Routes.NEW_ROUTINE) {
-            RoutineEditScreen(routineId = null, onDone = { nav.popBackStack() })
+        composable(Routes.NEW_ROUTINE) { back ->
+            RoutineEditor(nav, back, routineId = null)
         }
         composable(
             "routine/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType }),
         ) { back ->
-            RoutineEditScreen(routineId = back.arguments!!.getLong("id"), onDone = { nav.popBackStack() })
+            RoutineEditor(nav, back, routineId = back.arguments!!.getLong("id"))
         }
         composable(Routes.ADD_MEAL) {
             com.gymapp.ui.food.AddMealScreen(onDone = { nav.popBackStack() })
         }
         composable(Routes.FOOD_ANALYTICS) {
             com.gymapp.ui.food.FoodAnalyticsScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.NEW_EXERCISE_FOR_ROUTINE) {
+            ExerciseEditScreen(
+                exerciseId = null,
+                date = null,
+                initialName = "",
+                onCreated = { id -> nav.previousBackStackEntry?.savedStateHandle?.set(NEW_EXERCISE_RESULT, id) },
+                onDone = { nav.popBackStack() },
+            )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(
@@ -193,4 +204,24 @@ private fun AppNavigation() {
             )
         }
     }
+}
+
+private const val NEW_EXERCISE_RESULT = "newExerciseId"
+
+/** Routine editor, wired so "Add new exercise" creates an exercise and appends it to the routine. */
+@Composable
+private fun RoutineEditor(
+    nav: androidx.navigation.NavHostController,
+    back: androidx.navigation.NavBackStackEntry,
+    routineId: Long?,
+) {
+    val handle = back.savedStateHandle
+    val newId by handle.getStateFlow<Long?>(NEW_EXERCISE_RESULT, null).collectAsState()
+    RoutineEditScreen(
+        routineId = routineId,
+        onDone = { nav.popBackStack() },
+        onNewExercise = { nav.navigate(Routes.NEW_EXERCISE_FOR_ROUTINE) },
+        newExerciseId = newId,
+        onNewExerciseAdded = { handle[NEW_EXERCISE_RESULT] = null },
+    )
 }

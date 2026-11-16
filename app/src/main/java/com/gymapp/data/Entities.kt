@@ -178,4 +178,9 @@ data class RoutineExercise(
     /** 0-based order within the routine. */
     val position: Int,
     val exerciseId: Long,
+    /**
+     * Superset marker: consecutive rows with the same non-null value are done as a superset
+     * when the routine is started. Null = not in a superset.
+     */
+    val supersetGroup: Int? = null,
 )

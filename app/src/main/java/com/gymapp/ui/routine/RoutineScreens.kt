@@ -2,6 +2,7 @@ package com.gymapp.ui.routine
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -23,8 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -56,6 +57,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -68,6 +70,7 @@ import com.gymapp.data.RoutineWithExercises
 import com.gymapp.ui.common.ExerciseThumb
 import com.gymapp.ui.common.write
 import com.gymapp.ui.day.ConfirmDialog
+import com.gymapp.ui.theme.supersetColor
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -168,14 +171,22 @@ private fun RoutineCard(routine: RoutineWithExercises, onClick: () -> Unit, onEd
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                routine.exercises.forEachIndexed { i, ex ->
-                    Text(
-                        "${i + 1}. ${ex.name}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                var run = -1
+                routine.items.forEachIndexed { i, item ->
+                    val g = item.supersetGroup
+                    if (g != null && (i == 0 || routine.items[i - 1].supersetGroup != g)) run++
+                    val color = if (g != null) supersetColor(run) else Color.Transparent
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.width(4.dp).height(20.dp).background(color))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "${i + 1}. ${item.exercise.name}" + if (g != null) "  · superset" else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -255,140 +266,9 @@ fun ManageRoutines(onNewRoutine: () -> Unit, onEditRoutine: (Long) -> Unit, modi
     }
 }
 
-/** New Routine ([routineId] null) or Edit Routine: a name plus an ordered list of exercises. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun RoutineEditScreen(routineId: Long?, onDone: () -> Unit) {
-    val app = LocalContext.current.container
-    val scope = rememberCoroutineScope()
-    val library by remember { app.repository.observeLibrary() }.collectAsState(initial = emptyList())
-
-    var loaded by rememberSaveable { mutableStateOf(routineId == null) }
-    var name by rememberSaveable { mutableStateOf("") }
-    var exerciseIds by rememberSaveable { mutableStateOf(listOf<Long>()) }
-    var picking by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
-
-    LaunchedEffect(routineId) {
-        if (routineId != null && !loaded) {
-            app.repository.routineWithExercises(routineId)?.let { r ->
-                name = r.routine.name
-                exerciseIds = r.exercises.map { it.id }
-            }
-            loaded = true
-        }
-    }
-
-    val byId = library.associateBy { it.exercise.id }
-    val canSave = loaded && name.isNotBlank() && exerciseIds.isNotEmpty() && !saving
-
-    fun save() {
-        saving = true
-        scope.launch {
-            app.write { app.repository.saveRoutine(routineId, name, exerciseIds) }
-            onDone()
-        }
-    }
-
-    fun move(from: Int, to: Int) {
-        if (to !in exerciseIds.indices) return
-        exerciseIds = exerciseIds.toMutableList().apply { add(to, removeAt(from)) }
-    }
-
-    BackHandler { onDone() }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (routineId == null) "New Routine" else "Edit Routine") },
-                navigationIcon = { IconButton(onClick = onDone) { Icon(Icons.Default.Close, "Cancel") } },
-                actions = { TextButton(enabled = canSave, onClick = ::save) { Text("Save") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { padding ->
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize().padding(padding).imePadding(),
-        ) {
-            item {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Routine name") },
-                    placeholder = { Text("e.g. Push Day") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                Text(
-                    "Exercises, in the order you'll do them",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            }
-            if (exerciseIds.isEmpty()) {
-                item {
-                    Text(
-                        "No exercises yet. Add some below.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-            itemsIndexed(exerciseIds) { i, id ->
-                val ex = byId[id]?.exercise
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("${i + 1}.", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(32.dp))
-                    if (ex != null) ExerciseThumb(ex.name, ex.photoPath, size = 36.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        ex?.name ?: "(deleted exercise)",
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = { move(i, i - 1) }, enabled = i > 0) {
-                        Icon(Icons.Default.ArrowUpward, "Move up")
-                    }
-                    IconButton(onClick = { move(i, i + 1) }, enabled = i < exerciseIds.lastIndex) {
-                        Icon(Icons.Default.ArrowDownward, "Move down")
-                    }
-                    IconButton(onClick = { exerciseIds = exerciseIds.toMutableList().apply { removeAt(i) } }) {
-                        Icon(Icons.Default.Close, "Remove")
-                    }
-                }
-            }
-            item {
-                OutlinedButton(onClick = { picking = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add exercise")
-                }
-            }
-        }
-    }
-
-    if (picking) {
-        ExercisePickDialog(
-            library = library,
-            onDismiss = { picking = false },
-            onPick = { exerciseIds = exerciseIds + it },
-        )
-    }
-}
-
 /** Searchable library list. Each tap appends one exercise; the dialog stays open to add more. */
 @Composable
-private fun ExercisePickDialog(library: List<LibraryExercise>, onDismiss: () -> Unit, onPick: (Long) -> Unit) {
+internal fun ExercisePickDialog(library: List<LibraryExercise>, onDismiss: () -> Unit, onPick: (Long) -> Unit) {
     var query by remember { mutableStateOf("") }
     var added by remember { mutableStateOf(0) }
     val shown = library.filter { query.isBlank() || it.exercise.name.contains(query.trim(), ignoreCase = true) }

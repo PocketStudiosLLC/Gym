@@ -204,7 +204,7 @@ data class LastUsed(val exerciseId: Long, val lastDate: LocalDate)
         Meal::class,
         WaterLog::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -215,8 +215,15 @@ abstract class GymDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): GymDatabase =
             Room.databaseBuilder(context, GymDatabase::class.java, "gym.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
+
+        /** v5 lets routines contain supersets. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `routine_exercise` ADD COLUMN `supersetGroup` INTEGER")
+            }
+        }
 
         /** v4 drops supplements and records creatine mixed into water. */
         val MIGRATION_3_4 = object : Migration(3, 4) {

@@ -12,6 +12,7 @@ import com.gymapp.data.MuscleGroup
 import com.gymapp.data.BodyWeight
 import com.gymapp.data.Meal
 import com.gymapp.data.PhotoStore
+import com.gymapp.data.normalizeSupersets
 import com.gymapp.data.Profile
 import com.gymapp.data.Sex
 import com.gymapp.data.WaterLog
@@ -72,7 +73,14 @@ data class BWater(val uuid: String, val date: String, val loggedAt: Long, val ml
 
 
 @Serializable
-data class BRoutine(val uuid: String, val name: String, val createdAt: Long, val exerciseUuids: List<String>)
+data class BRoutine(
+    val uuid: String,
+    val name: String,
+    val createdAt: Long,
+    val exerciseUuids: List<String>,
+    /** Superset marker per exercise (same order as [exerciseUuids]); empty in older backups. */
+    val supersetGroups: List<Int?> = emptyList(),
+)
 
 @Serializable
 data class BExercise(
@@ -205,6 +213,8 @@ class BackupManager(
                     name = r.name,
                     createdAt = r.createdAt,
                     exerciseUuids = routineRows[r.id].orEmpty().sortedBy { it.position }.mapNotNull { exUuid[it.exerciseId] },
+                    supersetGroups = routineRows[r.id].orEmpty().sortedBy { it.position }
+                        .filter { exUuid[it.exerciseId] != null }.map { it.supersetGroup },
                 )
             },
             weights = foodDao.allWeights().map { BWeight(it.uuid, it.date.toString(), it.loggedAt, it.weightLb) },
@@ -386,7 +396,9 @@ class BackupManager(
                     if (br.uuid in existingRoutines) continue
                     val rid = dao.insertRoutine(Routine(uuid = br.uuid, name = br.name, createdAt = br.createdAt))
                     dao.insertRoutineExercises(
-                        br.exerciseUuids.mapNotNull { exId[it] }.mapIndexed { i, ex -> RoutineExercise(rid, i, ex) },
+                        br.exerciseUuids.mapIndexedNotNull { i, u -> exId[u]?.let { it to br.supersetGroups.getOrNull(i) } }
+                            .let { kept -> kept.zip(normalizeSupersets(kept.map { it.second })) }
+                            .mapIndexed { i, (pair, group) -> RoutineExercise(rid, i, pair.first, group) },
                     )
                 }
             }

@@ -26,7 +26,33 @@ data class DayEntry(
         superset != null && set.setIndex >= superset.startSetIndex
 }
 
-data class RoutineWithExercises(val routine: Routine, val exercises: List<Exercise>)
+/** One exercise in a routine; consecutive items with the same non-null [supersetGroup] form a superset. */
+data class RoutineItem(val exercise: Exercise, val supersetGroup: Int?)
+
+data class RoutineWithExercises(val routine: Routine, val items: List<RoutineItem>) {
+    val exercises: List<Exercise> get() = items.map { it.exercise }
+}
+
+/**
+ * Makes superset markers consistent: each run of consecutive equal non-null values gets its own
+ * number (0, 1, 2…), and a "superset" of one exercise is cleared.
+ */
+fun normalizeSupersets(groups: List<Int?>): List<Int?> {
+    val out = MutableList<Int?>(groups.size) { null }
+    var next = 0
+    var i = 0
+    while (i < groups.size) {
+        val g = groups[i]
+        var j = i + 1
+        if (g != null) while (j < groups.size && groups[j] == g) j++
+        if (g != null && j - i >= 2) {
+            for (k in i until j) out[k] = next
+            next++
+        }
+        i = j
+    }
+    return out
+}
 
 data class LibraryExercise(
     val exercise: Exercise,
@@ -121,18 +147,32 @@ class GymRepository(
             val exById = exercises.associateBy { it.id }
             val byRoutine = rows.groupBy { it.routineId }
             routines.map { r ->
-                RoutineWithExercises(r, byRoutine[r.id].orEmpty().sortedBy { it.position }.mapNotNull { exById[it.exerciseId] })
+                RoutineWithExercises(r, toItems(byRoutine[r.id].orEmpty().sortedBy { it.position }, exById))
             }
         }
 
     suspend fun routineWithExercises(id: Long): RoutineWithExercises? {
         val r = dao.routine(id) ?: return null
         val exById = dao.allExercises().associateBy { it.id }
-        return RoutineWithExercises(r, dao.routineExercises(id).mapNotNull { exById[it.exerciseId] })
+        return RoutineWithExercises(r, toItems(dao.routineExercises(id), exById))
     }
 
-    /** Creates ([id] null) or replaces a routine with [exerciseIds] in order. Returns its id. */
-    suspend fun saveRoutine(id: Long?, name: String, exerciseIds: List<Long>): Long = db.withTransaction {
+    private fun toItems(rows: List<RoutineExercise>, exById: Map<Long, Exercise>): List<RoutineItem> {
+        val kept = rows.mapNotNull { row -> exById[row.exerciseId]?.let { it to row.supersetGroup } }
+        val groups = normalizeSupersets(kept.map { it.second })
+        return kept.mapIndexed { i, (ex, _) -> RoutineItem(ex, groups[i]) }
+    }
+
+    /**
+     * Creates ([id] null) or replaces a routine with [exerciseIds] in order; [supersetGroups]
+     * (same length, or empty for none) marks which consecutive exercises are supersets. Returns its id.
+     */
+    suspend fun saveRoutine(
+        id: Long?,
+        name: String,
+        exerciseIds: List<Long>,
+        supersetGroups: List<Int?> = emptyList(),
+    ): Long = db.withTransaction {
         val routineId = if (id == null) {
             dao.insertRoutine(Routine(uuid = UUID.randomUUID().toString(), name = name.trim(), createdAt = System.currentTimeMillis()))
         } else {
@@ -141,22 +181,34 @@ class GymRepository(
             dao.clearRoutineExercises(id)
             id
         }
-        dao.insertRoutineExercises(exerciseIds.mapIndexed { i, ex -> RoutineExercise(routineId, i, ex) })
+        val groups = normalizeSupersets(exerciseIds.indices.map { supersetGroups.getOrNull(it) })
+        dao.insertRoutineExercises(exerciseIds.mapIndexed { i, ex -> RoutineExercise(routineId, i, ex, groups[i]) })
         routineId
     }
 
     suspend fun deleteRoutine(id: Long) = dao.deleteRoutine(id)
 
-    /** Adds every exercise of the routine to [date], in the routine's order. Returns the new entry ids. */
+    /**
+     * Adds every exercise of the routine to [date], in the routine's order, and links the
+     * routine's supersets (from the first set on). Returns the new entry ids.
+     */
     suspend fun startRoutine(date: LocalDate, routineId: Long): List<Long> = db.withTransaction {
         val rows = dao.routineExercises(routineId)
+        val groups = normalizeSupersets(rows.map { it.supersetGroup })
         var position = dao.maxPosition(date)
-        rows.map { row ->
+        val entryIds = rows.map { row ->
             position += 1
             dao.insertEntry(
                 ExerciseEntry(uuid = UUID.randomUUID().toString(), exerciseId = row.exerciseId, date = date, position = position),
             )
         }
+        entryIds.indices.filter { groups[it] != null }.groupBy { groups[it] }.values.forEach { members ->
+            val groupId = dao.insertGroup(
+                SupersetGroup(uuid = UUID.randomUUID().toString(), date = date, colorIndex = nextColor(date)),
+            )
+            members.forEach { dao.insertMember(SupersetMember(groupId, entryIds[it], 0)) }
+        }
+        entryIds
     }
 
     suspend fun exercise(id: Long): Exercise? = dao.exercise(id)

@@ -74,6 +74,8 @@ fun ExerciseEditScreen(
     date: LocalDate?,
     initialName: String,
     onDone: (addedToDay: Boolean) -> Unit,
+    /** Called with the new exercise's id after it's created (not on edit). */
+    onCreated: (Long) -> Unit = {},
 ) {
     val context = LocalContext.current
     val app = context.container
@@ -157,6 +159,7 @@ fun ExerciseEditScreen(
             app.write {
                 if (exerciseId == null) {
                     val id = app.repository.createExercise(trimmed, groups, photo)
+                    onCreated(id)
                     if (addToDay && date != null) {
                         val entryId = app.repository.addEntry(date, id)
                         app.expand(entryId)

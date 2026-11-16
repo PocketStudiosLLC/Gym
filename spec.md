@@ -258,9 +258,17 @@ Data model v3 added `body_weight`, `meal`, `water` and `supplement` tables. v4 a
 A **routine** is a named list of exercises in a set order, e.g. "Push Day".
 
 - **Building routines** happens in **Settings → Routines**: a list of routines (tap one to edit, long-press to edit or delete) and a **New Routine** button.
-- **New Routine:** enter a name, then **Add exercise** to pick exercises from the library (the picker stays open so several can be added; the same exercise may appear more than once). Each row has Move up, Move down and Remove. Save needs a name and at least one exercise.
-- **Start Routine:** lists all routines with their exercises. Tapping one adds every exercise to the day being shown, in the routine's order, and opens the first. Long-press a routine to **Edit** or **Delete** it. Deleting a routine never touches logged workouts.
-- Routines are included in export/import backups.
+- **New Routine:** enter a name, then **Add exercise** to pick exercises from the library (the picker stays open so several can be added; the same exercise may appear more than once), or **Add new exercise** to create one (the New Exercise form, without "Save & add to this day"); saving it returns to the routine with the new exercise added at the end. Each row has a drag handle and Remove. Save needs a name and at least one exercise.
+- **Reordering and supersets (drag):** hold a row (long-press) to pick it up, then drag.
+  - Drop it **between** rows to move it there; a line shows where it will land.
+  - Hold it **over** another row for about half a second: the row highlights and shows "Release to superset". Releasing places it right after that row in the same superset (joining that row's superset if it has one).
+  - Dropping between two members of a superset joins that superset; dropping anywhere else takes the exercise out of its superset. A superset left with one exercise is dissolved.
+  - Releasing over a row before it highlights cancels the drag.
+  - Superset rows show a colored bar (one color per superset) and a "Superset" label. The list scrolls when an exercise is held near the top or bottom edge.
+- Routine cards (Start Routine, Settings → Routines) mark superset exercises with a colored bar and "· superset".
+- **Start Routine:** lists all routines with their exercises. Tapping one adds every exercise to the day being shown, in the routine's order, and opens the first. The routine's supersets become real supersets on that day, covering every set (from set 1), each with its own color. Long-press a routine to **Edit** or **Delete** it. Deleting a routine never touches logged workouts.
+- Routines, including their supersets, are included in export/import backups.
+- Data model v5 adds `routine_exercise.supersetGroup` (nullable INTEGER): consecutive rows with the same value form one superset.
 
 ---
 
